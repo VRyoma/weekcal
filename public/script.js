@@ -81,6 +81,7 @@ let weeklyMessage = '';
 let characterImage = null;
 let imagePosition = 'center'; // 画像位置の設定
 let imageSize = 560; // 画像サイズの設定
+let weekStartDay = 'sunday'; // 週の開始曜日（sunday, monday, saturday）
 
 // localStorage キー
 const STORAGE_KEYS = {
@@ -92,7 +93,8 @@ const STORAGE_KEYS = {
     MESSAGE: 'weeklySchedule_message',
     IMAGE: 'weeklySchedule_image',
     IMAGE_POSITION: 'weeklySchedule_imagePosition',
-    IMAGE_SIZE: 'weeklySchedule_imageSize'
+    IMAGE_SIZE: 'weeklySchedule_imageSize',
+    WEEK_START_DAY: 'weeklySchedule_weekStartDay'
 };
 
 // データ保存関数
@@ -123,6 +125,9 @@ function saveData() {
         
         // 画像サイズを保存
         localStorage.setItem(STORAGE_KEYS.IMAGE_SIZE, imageSize.toString());
+        
+        // 週の開始曜日を保存
+        localStorage.setItem(STORAGE_KEYS.WEEK_START_DAY, weekStartDay);
         
         console.log('データを保存しました');
     } catch (error) {
@@ -201,6 +206,12 @@ function loadData() {
             imageSize = parseInt(savedImageSize);
         }
 
+        // 週の開始曜日の復元
+        const savedWeekStartDay = localStorage.getItem(STORAGE_KEYS.WEEK_START_DAY);
+        if (savedWeekStartDay) {
+            weekStartDay = savedWeekStartDay;
+        }
+
         console.log('データを復元しました');
     } catch (error) {
         console.error('データ復元エラー:', error);
@@ -263,6 +274,8 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeThemeGrid();
     initializeScheduleGrid();
     initializeEventListeners();
+    initializeShareButtons(); // シェアボタンの表示制御を追加
+    initializeWeekStartDayListeners(); // 週の開始曜日のイベントリスナーを追加
     
     // 強制的に画像を再生成
     setTimeout(() => {
@@ -338,7 +351,8 @@ function initializeScheduleGrid() {
     const scheduleGrid = document.getElementById('scheduleGrid');
     scheduleGrid.innerHTML = '';
 
-    days.forEach(day => {
+    const orderedDays = getOrderedDays();
+    orderedDays.forEach(day => {
         const row = document.createElement('div');
         row.className = 'flex items-center gap-3 flex-wrap';
 
@@ -667,7 +681,8 @@ function generateImage() {
     roundRect(ctx, 24, startY - 16, boxWidth + 40, (boxHeight + spacing) * 7 + 24, 32);
     ctx.fill();
     
-    days.forEach((day, index) => {
+    const orderedDays = getOrderedDays();
+    orderedDays.forEach((day, index) => {
         const y = startY + (boxHeight + spacing) * index;
         const isHoliday = holidays[day.key] || day.key === 'sunday';
         const isSaturday = day.key === 'saturday';
@@ -945,7 +960,8 @@ function downloadImage() {
     link.click();
 }
 
-function shareImage() {
+// Web Share API用の関数
+function webShare() {
     generateImage();
     const canvas = document.getElementById('previewCanvas');
     
@@ -957,26 +973,73 @@ function shareImage() {
                 if (navigator.share) {
                     navigator.share({
                         title: '今週のスケジュール',
-                        text: '今週のスケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/',
+                        text: '週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/',
                         files: [file]
                     }).catch(function(error) {
-                        console.error('シェアエラー:', error);
-                        fallbackShare();
+                        console.error('Web Share エラー:', error);
+                        alert('シェアに失敗しました。');
                     });
-                } else {
-                    fallbackShare();
                 }
             }
         });
     } catch (error) {
-        console.error('シェアエラー:', error);
-        fallbackShare();
+        console.error('Web Share エラー:', error);
+        alert('シェアに失敗しました。');
     }
 }
 
-function fallbackShare() {
-    const text = encodeURIComponent('今週のスケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
-    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+// X直接シェア用の関数（画像をクリップボードにコピー）
+function shareToX() {
+    generateImage();
+    const canvas = document.getElementById('previewCanvas');
+    
+    // 画像をクリップボードにコピー
+    canvas.toBlob(async function(blob) {
+        try {
+            // クリップボードAPIが利用可能かチェック
+            if (navigator.clipboard && window.ClipboardItem) {
+                const item = new ClipboardItem({ 'image/png': blob });
+                await navigator.clipboard.write([item]);
+                
+                // 成功メッセージを表示
+                showCopyNotification('画像をクリップボードにコピーしました！\nXで Ctrl+V (Cmd+V) で貼り付けできます');
+                
+                // 少し遅延してからXを開く
+                setTimeout(() => {
+                    const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
+                    window.open(`https://x.com/intent/tweet?text=${text}`, '_blank');
+                }, 500);
+            } else {
+                // クリップボードAPIが利用できない場合は直接Xを開く
+                const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
+                window.open(`https://x.com/intent/tweet?text=${text}`, '_blank');
+            }
+        } catch (error) {
+            console.error('クリップボードコピーエラー:', error);
+            // エラーの場合は直接Xを開く
+            const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
+            window.open(`https://x.com/intent/tweet?text=${text}`, '_blank');
+        }
+    });
+}
+
+
+
+// シェアボタンの表示制御
+function initializeShareButtons() {
+    const webShareBtn = document.getElementById('webShareBtn');
+    const xShareBtn = document.getElementById('xShareBtn');
+    
+    // Web Share APIが利用可能かチェック
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([''], 'test.png', { type: 'image/png' })] })) {
+        // モバイルデバイスでWeb Share APIが利用可能な場合
+        webShareBtn.style.display = 'flex';
+        xShareBtn.style.display = 'flex';
+    } else {
+        // PCやWeb Share API非対応の場合はXシェアのみ表示
+        webShareBtn.style.display = 'none';
+        xShareBtn.style.display = 'flex';
+    }
 }
 
 // データクリアボタンの機能を追加（デバッグ用）
@@ -992,3 +1055,102 @@ function addClearDataButton() {
 if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     addClearDataButton();
 } 
+// 週の開始曜
+日に応じて曜日の順番を取得する関数
+function getOrderedDays() {
+    const dayOrder = {
+        'saturday': ['saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        'sunday': ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        'monday': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    };
+    
+    const orderedKeys = dayOrder[weekStartDay];
+    return orderedKeys.map(key => days.find(day => day.key === key));
+}
+
+// 週の開始曜日を変更する関数
+function changeWeekStartDay(newStartDay) {
+    weekStartDay = newStartDay;
+    saveData(); // データを保存
+    
+    // スケジュール入力欄を再生成（入力内容は維持される）
+    initializeScheduleGrid();
+    
+    // 画像を再生成
+    generateImage();
+}
+
+// 週の開始曜日のイベントリスナーを初期化
+function initializeWeekStartDayListeners() {
+    document.querySelectorAll('input[name="weekStartDay"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                changeWeekStartDay(e.target.value);
+            }
+        });
+    });
+    
+    // 保存された値に応じてラジオボタンを設定
+    const savedRadio = document.querySelector(`input[name="weekStartDay"][value="${weekStartDay}"]`);
+    if (savedRadio) {
+        savedRadio.checked = true;
+    }
+}// 
+クリップボードにコピーする関数
+function copyToClipboard() {
+    generateImage();
+    const canvas = document.getElementById('previewCanvas');
+    
+    canvas.toBlob(async function(blob) {
+        try {
+            // クリップボードAPIが利用可能かチェック
+            if (navigator.clipboard && window.ClipboardItem) {
+                const item = new ClipboardItem({ 'image/png': blob });
+                await navigator.clipboard.write([item]);
+                
+                // 成功メッセージを表示
+                showCopyNotification('画像をクリップボードにコピーしました！');
+            } else {
+                // クリップボードAPIが利用できない場合
+                showCopyNotification('お使いのブラウザではクリップボード機能がサポートされていません', 'error');
+            }
+        } catch (error) {
+            console.error('クリップボードコピーエラー:', error);
+            showCopyNotification('クリップボードへのコピーに失敗しました', 'error');
+        }
+    });
+}
+
+// コピー通知を表示する関数（改良版）
+function showCopyNotification(message, type = 'success') {
+    // 既存の通知があれば削除
+    const existingNotification = document.getElementById('copyNotification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+    
+    // 通知要素を作成
+    const notification = document.createElement('div');
+    notification.id = 'copyNotification';
+    
+    const bgColor = type === 'success' ? 'bg-green-500' : 'bg-red-500';
+    const icon = type === 'success' 
+        ? `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+           </svg>`
+        : `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+           </svg>`;
+    
+    notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2 animate-pulse`;
+    notification.innerHTML = `${icon}<span>${message}</span>`;
+    
+    document.body.appendChild(notification);
+    
+    // 3秒後に自動で削除
+    setTimeout(() => {
+        if (notification && notification.parentNode) {
+            notification.remove();
+        }
+    }, 3000);
+}
