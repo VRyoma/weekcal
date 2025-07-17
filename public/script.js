@@ -988,12 +988,29 @@ function webShare() {
     }
 }
 
-// X直接シェア用の関数（画像をクリップボードにコピー）
+// X直接シェア用の関数（スマホ対応版）
 function shareToX() {
+    // まず先にXのURLを準備（ユーザーアクションとして認識させるため）
+    const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
+    const xUrl = `https://x.com/intent/tweet?text=${text}`;
+    
+    // モバイルデバイスかどうかを判定
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        // モバイルの場合は直接Xを開く（ポップアップブロッカー回避）
+        window.location.href = xUrl;
+        return;
+    }
+    
+    // PC/デスクトップの場合はクリップボードコピーを試行
     generateImage();
     const canvas = document.getElementById('previewCanvas');
     
-    // 画像をクリップボードにコピー
+    // 先にXを開く（ユーザーアクションとして認識させるため）
+    const xWindow = window.open(xUrl, '_blank');
+    
+    // 画像をクリップボードにコピー（バックグラウンドで実行）
     canvas.toBlob(async function(blob) {
         try {
             // クリップボードAPIが利用可能かチェック
@@ -1003,22 +1020,10 @@ function shareToX() {
                 
                 // 成功メッセージを表示
                 showCopyNotification('画像をクリップボードにコピーしました！\nXで Ctrl+V (Cmd+V) で貼り付けできます');
-                
-                // 少し遅延してからXを開く
-                setTimeout(() => {
-                    const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
-                    window.open(`https://x.com/intent/tweet?text=${text}`, '_blank');
-                }, 500);
-            } else {
-                // クリップボードAPIが利用できない場合は直接Xを開く
-                const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
-                window.open(`https://x.com/intent/tweet?text=${text}`, '_blank');
             }
         } catch (error) {
             console.error('クリップボードコピーエラー:', error);
-            // エラーの場合は直接Xを開く
-            const text = encodeURIComponent('週間スケジュールを作成しました！ #週間スケジュール画像メーカー https://weekcal.vvil.jp/');
-            window.open(`https://x.com/intent/tweet?text=${text}`, '_blank');
+            // エラーでも通知は表示しない（Xは既に開いているため）
         }
     });
 }
